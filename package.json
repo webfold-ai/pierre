@@ -1,0 +1,93 @@
+{
+  "name": "@pierre/words",
+  "version": "0.3.0",
+  "description": "A fast markdown renderer written in WebAssembly Text.",
+  "license": "apache-2.0",
+  "files": [
+    "dist/",
+    "!dist/benchmark/",
+    "LICENSE.md",
+    "NOTICE.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "workerd": "./dist/workerd.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./no-math": {
+      "types": "./dist/no-math.d.ts",
+      "workerd": "./dist/no-math-workerd.js",
+      "import": "./dist/no-math.js",
+      "default": "./dist/no-math.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js",
+      "default": "./dist/core.js"
+    },
+    "./words.wasm": "./dist/words.wasm",
+    "./words-no-math.wasm": "./dist/words-no-math.wasm",
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "default": "./dist/react.js"
+    },
+    "./highlights": {
+      "types": "./dist/highlights.d.ts",
+      "import": "./dist/highlights.js",
+      "default": "./dist/highlights.js"
+    },
+    "./mermaid": {
+      "types": "./dist/mermaid.d.ts",
+      "import": "./dist/mermaid.js",
+      "default": "./dist/mermaid.js"
+    },
+    "./html": {
+      "types": "./dist/html.d.ts",
+      "import": "./dist/html.js",
+      "default": "./dist/html.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.51.1",
+    "@streamdown/code": "2.0.0",
+    "@types/bun": "1.4.0",
+    "@types/jsdom": "28.0.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "jsdom": "26.1.0",
+    "markdown-it": "15.0.0",
+    "md4x": "0.0.29",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "shiki": "4.4.1",
+    "streamdown": "2.7.1",
+    "tsdown": "0.22.14",
+    "typescript": "7.0.2",
+    "@pierre/highlights": "0.6.0",
+    "@pierre/wat-tools": "0.1.0"
+  },
+  "peerDependencies": {
+    "@pierre/highlights": ">=0.5.1",
+    "react": "^18.3.1 || ^19.0.0",
+    "react-dom": "^18.3.1 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "@pierre/highlights": {
+      "optional": true
+    }
+  },
+  "scripts": {}
+}

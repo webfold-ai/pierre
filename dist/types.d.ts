@@ -1,0 +1,75 @@
+//#region lib/types.d.ts
+/** Options for the HTML renderer. */
+interface RenderOptions extends HtmlSessionOptions {
+  skipHtml?: boolean;
+  /**
+   * Parse a leading YAML frontmatter block. The return value becomes
+   * `[meta, output]`, where `meta` is `null` when the input has no frontmatter.
+   */
+  frontmatter?: boolean;
+}
+/** Parsed YAML frontmatter: usually a mapping, but any JSON value. */
+type Frontmatter = {
+  [key: string]: Frontmatter;
+} | Frontmatter[] | string | number | boolean | null;
+/** Options for the terminal renderer. */
+interface AnsiOptions {
+  /** Wrap text at this column. With 0, the default, the terminal wraps it. */
+  width?: number;
+  /**
+   * Let `*` and `~` emphasis open and close next to Chinese, Japanese, and
+   * Korean text, as markdown-cjk-friendly does.
+   */
+  cjk?: boolean;
+  /**
+   * Read `$…$`, `$$…$$`, `$$` blocks, and `math` code blocks as math. The
+   * terminal shows their TeX source.
+   */
+  math?: boolean;
+}
+/** Options for incremental HTML rendering. */
+interface HtmlSessionOptions {
+  /** Complete common unfinished inline syntax. */
+  incomplete?: boolean;
+  /**
+   * Let `*` and `~` emphasis open and close next to Chinese, Japanese, and
+   * Korean text, as markdown-cjk-friendly does.
+   */
+  cjk?: boolean;
+  /** Render `$…$`, `$$…$$`, `$$` blocks, and `math` code blocks as SVG. */
+  math?: boolean;
+  /**
+   * Raw HTML tags to keep, each with the attributes it keeps, for example
+   * `{ details: ['open'], summary: [] }`. Names match in any case. Other
+   * tags, comments, and attributes are dropped, and so are `on*`, `srcdoc`,
+   * `data-markdown*`, and `data-words*` attributes, `javascript:` and
+   * `vbscript:` values, and `script` tags. Formatted output also checks URL
+   * attributes such as `href` and `src` with `defaultUrlTransform` rules.
+   * Overrides `skipHtml`.
+   */
+  allowedHtml?: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Show raw HTML as escaped text instead of dropping or keeping it. An HTML
+   * block becomes a paragraph of its source text, without Markdown inside
+   * it. Overrides `skipHtml` and `allowedHtml`.
+   */
+  escapeHtml?: boolean;
+}
+/** The result of one session render. */
+interface HtmlUpdate {
+  /** Full output, built on first read. */
+  html: string;
+  /** HTML of completed blocks. */
+  stable: string;
+  /** HTML completed since the previous revision. */
+  addition: string;
+  /** HTML that can still change. */
+  pending: string;
+  /** The previous `stable` is no longer valid. */
+  reset: boolean;
+  /** Output version. After a skipped revision, use `stable` instead of `addition`. */
+  revision: number;
+}
+//#endregion
+export { AnsiOptions, Frontmatter, HtmlSessionOptions, HtmlUpdate, RenderOptions };
+//# sourceMappingURL=types.d.ts.map

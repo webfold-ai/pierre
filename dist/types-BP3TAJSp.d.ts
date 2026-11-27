@@ -1,0 +1,116 @@
+//#region html/types.d.ts
+interface AnimateOptions {
+  animation?: 'fadeIn';
+  duration?: number;
+}
+/** Hooks that take and return the HTML of generated elements. These are trusted code. */
+type Components = Partial<Record<string, (html: string) => string>>;
+interface CodeOptions {
+  /**
+   * Code lines, each ending with LF. For a `MermaidPlugin` or `renderers`, the
+   * last line of an open fence has no LF while it is still being written.
+   */
+  code: string;
+  /** The first word of the info string, or `text` when it has none. */
+  language: string;
+  /**
+   * The rest of the info string after the language, trimmed, or `''`. For
+   * ```` ```ts title="a.ts" {3-5} ```` it is `title="a.ts" {3-5}`.
+   */
+  meta: string;
+  isIncomplete: boolean;
+}
+/** Changed lines of a code block. Lines before `firstLine` did not change. */
+interface CodeHighlightUpdate {
+  /**
+   * First changed line, zero-based, and not after the last line with content.
+   * Equals `lineCount` when nothing changed.
+   */
+  firstLine: number;
+  /** Total lines, including an empty final line after a trailing LF. */
+  lineCount: number;
+  /** Lines from `firstLine` on, joined by LF. Each line is balanced inline HTML. */
+  html: string;
+  /** Offset in `html` of the last line with content. */
+  lastLineOffset: number;
+  /** All lines as HTML, built on first read. */
+  readonly fullHtml: string;
+}
+interface CodeHighlighterSession {
+  highlight(options: CodeOptions): string | null;
+  highlightLines?(options: CodeOptions): CodeHighlightUpdate | null;
+  dispose(): void;
+}
+interface CodeHighlighterPlugin {
+  /** Return escaped HTML for the inside of `<code>`, or null for plain text. */
+  highlight(options: CodeOptions): string | null;
+  createSession?(): CodeHighlighterSession;
+}
+interface MermaidPlugin {
+  /** Return HTML for a `mermaid` code block, or null to show the code. */
+  render(options: CodeOptions): string | null;
+}
+interface PluginConfig {
+  code?: CodeHighlighterPlugin;
+  /** Diagrams for `mermaid` code blocks. See `createMermaidPlugin`. */
+  mermaid?: MermaidPlugin;
+  /**
+   * Renderers return HTML for a code block, or null to show the code. A closed
+   * block's output is reused while its language, meta, and code stay the same.
+   */
+  renderers?: {
+    language: string | string[];
+    /** Show the output in the code block frame, with its header and buttons. */
+    frame?: boolean;
+    render(options: CodeOptions): string | null;
+  }[];
+}
+interface ControlsConfig {
+  code?: boolean | {
+    copy?: boolean;
+    download?: boolean;
+  };
+}
+type IslandData = Readonly<{
+  id: string;
+  [key: string]: unknown;
+}>;
+/** Plain loading text or a CSS-styled skeleton with an optional accessible label. */
+type IslandPending = string | {
+  className: string;
+  label?: string;
+};
+interface HtmlIsland {
+  /** Also accept :name[label]{key="value"} in prose. Render phrasing content. */
+  inline?: boolean;
+  /** Displayed while an island is streaming. Defaults to no content. */
+  pending?: IslandPending;
+  /** Text shown before the island mounts. */
+  fallback?: string;
+  /** Return false to show the original source. */
+  accepts(data: IslandData): boolean;
+}
+interface HtmlOptions {
+  /** Registered island-NAME fences, keyed by NAME. */
+  islands?: Readonly<Record<string, HtmlIsland>>;
+  /** CJK-friendly emphasis. See `HtmlSessionOptions.cjk`. */
+  cjk?: boolean;
+  /** Math as SVG. See `HtmlSessionOptions.math`. */
+  math?: boolean;
+  /** Raw HTML tags to keep. See `HtmlSessionOptions.allowedHtml`. */
+  allowedHtml?: Readonly<Record<string, readonly string[]>>;
+  /** Raw HTML as escaped text. See `HtmlSessionOptions.escapeHtml`. */
+  escapeHtml?: boolean;
+  components?: Components;
+  plugins?: PluginConfig;
+  controls?: boolean | ControlsConfig;
+  lineNumbers?: boolean;
+  allowedElements?: string[];
+  disallowedElements?: string[];
+  unwrapDisallowed?: boolean;
+  urlTransform?: (url: string, key: 'href' | 'src') => string | null | undefined;
+  idPrefix?: string;
+}
+//#endregion
+export { CodeOptions as a, HtmlIsland as c, IslandPending as d, MermaidPlugin as f, CodeHighlighterSession as i, HtmlOptions as l, CodeHighlightUpdate as n, Components as o, PluginConfig as p, CodeHighlighterPlugin as r, ControlsConfig as s, AnimateOptions as t, IslandData as u };
+//# sourceMappingURL=types-BP3TAJSp.d.ts.map
