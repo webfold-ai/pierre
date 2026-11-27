@@ -1,0 +1,2 @@
+import { ChangeObject, CreatePatchOptions, DiffLinesOptions, HeaderOptions, createPatch, createTwoFilesPatch, diffChars, diffLines, diffWordsWithSpace, setMemoryLimit } from "./core.js";
+export { type ChangeObject, type CreatePatchOptions, type DiffLinesOptions, type HeaderOptions, createPatch, createTwoFilesPatch, diffChars, diffLines, diffWordsWithSpace, setMemoryLimit };
