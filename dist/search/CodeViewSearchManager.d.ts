@@ -1,0 +1,94 @@
+import { CodeViewSearchMatch, CodeViewSearchScan } from "./codeViewSearch.js";
+import { CodeView, CodeViewOpenSearchOptions, CodeViewOptions, LineScrollPosition, ScrollAnchor } from "../components/CodeView.js";
+//#region src/search/CodeViewSearchManager.d.ts
+type CodeViewSearchViewport = ScrollAnchor | 'top';
+interface CodeViewSearchState {
+  originalViewport: CodeViewSearchViewport | undefined;
+  matchViewport: CodeViewSearchViewport | undefined;
+  scope: {
+    itemId: string;
+  } | undefined;
+  matches: CodeViewSearchMatch[];
+  scan: CodeViewSearchScan | undefined;
+  pendingNavigation: 'jump' | 'select' | 'reveal' | undefined;
+  current: CodeViewSearchMatch | undefined;
+  centerNavigation: boolean;
+  pendingHorizontalReveal: boolean;
+  currentPosition: LineScrollPosition | undefined;
+}
+declare class CodeViewSearchManager<LAnnotation, Caret> {
+  private readonly view;
+  readonly state: CodeViewSearchState;
+  private panel;
+  private renderedThemeCSS;
+  private themeDirty;
+  private matchesDirty;
+  private highlighter;
+  constructor(view: CodeView<LAnnotation, Caret>);
+  open(options?: CodeViewOpenSearchOptions): void;
+  close(): void;
+  closeInPlace(): void;
+  isOpen(): boolean;
+  navigate(direction: 'next' | 'previous'): void;
+  handleKeyDown: (event: KeyboardEvent) => void;
+  ownsEvent(event: Event): boolean;
+  userScrolled(): void;
+  addItems(count: number): void;
+  removeItem(itemId: string): void;
+  renameItem(oldId: string, newId: string): void;
+  optionsChanged(previousOptions: CodeViewOptions<LAnnotation, Caret>, nextOptions: CodeViewOptions<LAnnotation, Caret>): void;
+  invalidateTheme(): void;
+  clearTheme(): void;
+  flushPendingTheme(): void;
+  editorRendered(itemId: string): void;
+  private isPanelFocused;
+  private setScope;
+  private handleFocusIn;
+  private handlePanelBlur;
+  syncFocus: () => void;
+  private handleMatchClick;
+  private removeListeners;
+  private resolveScope;
+  private getQueryFromScope;
+  private getSelectedLineText;
+  private resetState;
+  private rememberViewport;
+  private getViewport;
+  private forgetViewport;
+  private recordMatchViewport;
+  private isAtViewport;
+  private isAtMatchViewport;
+  private restoreViewport;
+  private isMatchInView;
+  private scrollToMatch;
+  keepView(): void;
+  private isMatchHidden;
+  private revealMatch;
+  private getTopInset;
+  measureCurrentMatch(): DOMRect | undefined;
+  private isMatchRectVisible;
+  private getReplaceHandlers;
+  markMatchesDirty(): void;
+  private settleCutOffMatch;
+  flushMatches: () => void;
+  private setResults;
+  private updateResults;
+  private revealCurrentMatch;
+  private queueHighlightPaint;
+  paintHighlights: () => void;
+  private paintRanges;
+  private getItemPosition;
+  private getSearchItem;
+  private getSearchDiff;
+  invalidateScan(): void;
+  rescanItem(itemId: string): void;
+  private hasPendingRenderedItems;
+  private runSlice;
+  private advanceScan;
+  private search;
+  private getStartingMatch;
+  private findMatchAtAnchor;
+}
+//#endregion
+export { CodeViewSearchManager, CodeViewSearchState, CodeViewSearchViewport };
+//# sourceMappingURL=CodeViewSearchManager.d.ts.map

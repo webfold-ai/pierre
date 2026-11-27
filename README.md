@@ -1,0 +1,125 @@
+# Diffs, from Pierre
+
+`@pierre/diffs` is an open source diff and file rendering library that uses
+[Shiki](https://shiki.style/) with its JavaScript regex engine by default, with
+optional Shiki WebAssembly and Highlights backends. It's super customizable and
+packed with the features you need. Made with love by
+[The Pierre Computer Company](https://pierre.computer). Available as vanilla
+JavaScript and React components.
+
+**View examples and read documentation on [Diffs.com](https://diffs.com).**
+
+## Features
+
+- Diff file versions, patches, and arbitrary files
+- Split or stacked layout
+- Automatically adapts to Shiki themes
+- Supports light and dark mode
+- Options for diff highlight styles, in-line highlighting, wrapping, line
+  numbers, and more
+- Supports custom fonts and `font-feature-settings`
+- Flexible annotation framework for injecting comments, annotations, and more
+- Add your own accept/reject changes UI
+- Select and highlight lines
+
+## Install
+
+```bash
+pnpm add @pierre/diffs
+```
+
+## Diff library
+
+`FileDiff` and `CodeView` use `jsdiff` by default. Set
+`options.parseDiffOptions.preferredDiffLib` to `'@pierre/patches'` to use the
+WebAssembly backend:
+
+```tsx
+const options = { parseDiffOptions: { preferredDiffLib: '@pierre/patches' } };
+
+<FileDiff fileDiff={fileDiff} options={options} />
+<CodeView items={items} options={options} />
+```
+
+The option controls file diffs, editor updates, and word or character
+highlights. With a worker pool, set `preferredDiffLib` on the pool for
+highlights, like `lineDiffType`. Supplied patch hunks stay unchanged until an
+edit requires a new diff. Both libraries give the same output, so changing the
+library does not recompute a parsed diff. The exception is React `oldFile` and
+`newFile` pairs, which parse again.
+
+If `@pierre/patches` fails, file diffs and word or character highlights log the
+error and use `jsdiff`. On a page that blocks WebAssembly, the error is logged
+once and later diffs go straight to `jsdiff`.
+
+`parseDiffFromFile(oldFile, newFile, { preferredDiffLib: '@pierre/patches' })`
+also accepts the option.
+
+## Agent skill
+
+Install the agent skill for this package with the
+[Skills CLI](https://skills.sh/docs/cli):
+
+```bash
+npx skills add pierrecomputer/pierre --skill diffs
+```
+
+## Development
+
+We use pnpm for workspace package management and Bun for tests.
+[ARCHITECTURE.md](./ARCHITECTURE.md) maps the rendering and editing pipeline:
+which module owns what, and how a render and a keystroke move through them.
+
+```bash
+# From the root of the monorepo: setup dependencies
+pnpm install
+
+# Start the demo vite test server
+moonx demo:dev
+
+# To run the docs (diffs site)
+moonx docs:dev-diffs
+```
+
+### Testing
+
+```bash
+# Run tests and related command from within the package directory
+bun test
+
+# Update snapshots
+bun test --update-snapshots
+
+# Type checking
+moonx diffs:typecheck
+```
+
+Tests are located in the `test/` folder and use Bun's native testing framework
+with snapshot support.
+
+## Publishing
+
+**Applicable to the Pierre team only.**
+
+```bash
+# You may need to login first:
+pnpm login
+
+# Always run publish from within the package directory.
+cd packages/diffs
+pnpm publish
+# In a CI-marked shell: CI= pnpm publish
+```
+
+## Building the sprite
+
+The diff UI uses an SVG sprite built from `@pierre/icons`. From the monorepo
+root:
+
+```bash
+moonx root:icons
+```
+
+This reads SVGs from `node_modules/@pierre/icons/svg` and writes
+`packages/diffs/src/sprite.ts`. Run after updating `@pierre/icons` or changing
+`sprite.config.js`.

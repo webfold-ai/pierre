@@ -1,0 +1,37 @@
+import { RegisteredCustomLanguages, RegisteredHighlightsLanguages, ResolvedLanguages, ResolvingLanguages } from "./constants.js";
+import { isWorkerContext } from "../../utils/isWorkerContext.js";
+//#region src/highlighter/languages/resolveLanguage.ts
+async function resolveLanguage(lang) {
+	if (typeof __DIFFS_WORKER__ !== "undefined" ? __DIFFS_WORKER__ : isWorkerContext()) throw new Error(`resolveLanguage("${lang}") cannot be called from a worker context. Languages must be pre-resolved on the main thread and passed to the worker via the resolvedLanguages parameter.`);
+	const pending = ResolvingLanguages.get(lang);
+	if (pending != null) return pending;
+	const resolver = (async () => {
+		let loader = RegisteredCustomLanguages.get(lang);
+		if (loader == null) {
+			const { bundledLanguages } = await import("shiki/langs");
+			if (Object.prototype.hasOwnProperty.call(bundledLanguages, lang)) loader = bundledLanguages[lang];
+		}
+		if (loader == null && !RegisteredHighlightsLanguages.has(lang)) throw new Error(`resolveLanguage: "${lang}" not found in bundled or custom languages`);
+		const resolvedLang = {
+			name: lang,
+			data: loader == null ? [{
+				name: lang,
+				scopeName: `text.${lang}`,
+				patterns: [],
+				repository: {}
+			}] : (await loader()).default
+		};
+		if (!ResolvedLanguages.has(lang)) ResolvedLanguages.set(lang, resolvedLang);
+		return resolvedLang;
+	})();
+	ResolvingLanguages.set(lang, resolver);
+	try {
+		return await resolver;
+	} finally {
+		if (ResolvingLanguages.get(lang) === resolver) ResolvingLanguages.delete(lang);
+	}
+}
+//#endregion
+export { resolveLanguage };
+
+//# sourceMappingURL=resolveLanguage.js.map

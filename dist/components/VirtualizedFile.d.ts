@@ -1,0 +1,84 @@
+import { FileContents, LineAnnotation, NumericScrollLineAnchor, PendingCodeViewLayoutReset, RenderWindow, ScrollRequestResult, StickySpecs, ThemeTypes, VirtualFileMetrics } from "../types.js";
+import { SearchLineCuts } from "../search/codeViewSearch.js";
+import { ApplyChangeOptions, ApplyChangeResult } from "../editor/types.js";
+import { TextDocument, TextDocumentChange } from "../editor/textDocument.js";
+import { WorkerPoolManager } from "../worker/WorkerPoolManager.js";
+import "../worker/index.js";
+import { File, FileOptions, FileRenderProps } from "./File.js";
+import { Virtualizer } from "./Virtualizer.js";
+import { CodeView } from "./CodeView.js";
+//#region src/components/VirtualizedFile.d.ts
+declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extends File<LAnnotation, Caret> {
+  private virtualizer;
+  private metrics;
+  readonly __id: string;
+  readonly renderType = "virtualized";
+  top: number | undefined;
+  height: number;
+  unmeasured: boolean;
+  private cache;
+  private pendingRender;
+  private isVisible;
+  private isSetup;
+  private layoutDirty;
+  private currentCollapsed;
+  constructor(options: FileOptions<LAnnotation, Caret> | undefined, virtualizer: Virtualizer | CodeView<LAnnotation, Caret>, metrics?: VirtualFileMetrics, workerManager?: WorkerPoolManager, requestOwnerRender?: () => void);
+  getLineCutsForSearch(): SearchLineCuts;
+  setMetrics(metrics?: Partial<VirtualFileMetrics>, force?: boolean): void;
+  setLineAnnotations(lineAnnotations: LineAnnotation<LAnnotation>[]): void;
+  private syncLineAnnotations;
+  protected syncEditSessionAnnotationsFromEditor(lineAnnotations: LineAnnotation<LAnnotation>[]): boolean;
+  private hasLineAnnotations;
+  private hasUniformLineHeights;
+  private currentGhostTextRows;
+  getLineHeight(lineIndex: number, hasMetadataLine?: boolean): number;
+  setOptions(options: FileOptions<LAnnotation, Caret> | undefined): void;
+  setThemeType(themeType: ThemeTypes): void;
+  private resetMeasurements;
+  private invalidateLayout;
+  reconcileHeights(): boolean;
+  onRender: (dirty: boolean) => boolean;
+  updateCodeViewLayout(file: FileContents, top: number, reset?: PendingCodeViewLayoutReset, lineAnnotations?: LineAnnotation<LAnnotation>[]): number;
+  private getLayoutFile;
+  private getLayoutAnnotations;
+  getLinePosition(lineNumber: number): {
+    top: number;
+    height: number;
+  } | undefined;
+  getEditorViewport(): HTMLElement | Document | undefined;
+  scrollToLine(lineNumber: number, align: ScrollLogicalPosition, onDone: (result: ScrollRequestResult) => void): void;
+  cancelScroll(onDone?: (result: ScrollRequestResult) => void): void;
+  getRenderedBounds(): {
+    top: number;
+    bottom: number;
+  } | undefined;
+  getNumericScrollAnchor(localViewportTop: number): NumericScrollLineAnchor | undefined;
+  getVirtualizedHeight(): number;
+  getAdvancedStickySpecs(windowSpecs?: RenderWindow): StickySpecs | undefined;
+  cleanUp(recycle?: boolean): void;
+  private computeApproximateSize;
+  setVisibility(visible: boolean): void;
+  rerender(): void;
+  protected get isComponentManaged(): boolean;
+  syncGhostTextRows(): void;
+  protected renderChange(structural: boolean): void;
+  applyChange(document: TextDocument<'file', LAnnotation>, change: TextDocumentChange, options?: ApplyChangeOptions<'file', LAnnotation>): ApplyChangeResult;
+  render({ fileContainer, file, forceRender, lineAnnotations, ...props }: FileRenderProps<LAnnotation>): boolean;
+  protected finalizeRender(): void;
+  private updatePendingRender;
+  syncVirtualizedTop(): void;
+  protected shouldDisableVirtualizationBuffers(): boolean;
+  protected shouldGuardRebuildScroll(): boolean;
+  private isSimpleMode;
+  private isAdvancedMode;
+  private addLayoutCheckpoint;
+  private getLayoutCheckpointBeforeLineIndex;
+  private getLayoutCheckpointBeforeTop;
+  private getVirtualizedTop;
+  private getSimpleVirtualizer;
+  private getAdvancedVirtualizer;
+  private computeRenderRangeFromWindow;
+}
+//#endregion
+export { VirtualizedFile };
+//# sourceMappingURL=VirtualizedFile.d.ts.map

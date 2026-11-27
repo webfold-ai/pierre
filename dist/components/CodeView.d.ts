@@ -1,0 +1,691 @@
+import { CodeViewDiffItem, CodeViewFileItem, CodeViewItem, CodeViewItemScrollTarget, CodeViewLayout, CodeViewLineScrollTarget, CodeViewPositionScrollTarget, CodeViewRangeScrollTarget, CodeViewScrollBehavior, CodeViewScrollTarget, DiffsThemeNames, HunkSeparators, ScrollRequestResult, SelectedLineRange, SelectionSide, SmoothScrollSettings, ThemesType, VirtualFileMetrics, VirtualWindowSpecs } from "../types.js";
+import { SearchOptionDefaults, SearchPanelMode, SearchPanelState } from "../search/index.js";
+import { EditCompletionDecision, EditorChangeEvent, EditorType, FileDiffEditCompleteEvent, FileEditCompleteEvent } from "../editor/types.js";
+import { SelectionWriteOptions } from "../managers/InteractionManager.js";
+import { WorkerPoolManager } from "../worker/WorkerPoolManager.js";
+import "../worker/index.js";
+import { FileOptions } from "./File.js";
+import { FileDiffOptions } from "./FileDiff.js";
+import { Editor, EditorOptions } from "../editor/editor.js";
+import { VirtualizerConfig } from "./Virtualizer.js";
+import { VirtualizedFile } from "./VirtualizedFile.js";
+import { VirtualizedFileDiff } from "./VirtualizedFileDiff.js";
+//#region src/components/CodeView.d.ts
+type CodeViewCreateEditorOptions<EType extends EditorType, LAnnotation, Caret> = Required<Pick<EditorOptions<EType, LAnnotation, Caret>, 'onChange' | 'onFocus' | 'onBlur' | 'onRender' | 'searchPanel'>>;
+/**
+ * Which items a search covers. `'focused'` scopes to the focused editor, or
+ * keeps the current scope while the panel itself has focus, and otherwise
+ * searches every item. `'all'` always searches every item. An item id scopes
+ * to that item while it is an expanded edit-mode item, and otherwise falls
+ * back to every item.
+ */
+type CodeViewSearchScope = 'focused' | 'all' | {
+  itemId: string;
+};
+interface CodeViewOpenSearchOptions {
+  /**
+   * Requested panel mode. The replace row only shows while the scope is an
+   * edit-mode item; elsewhere the request is ignored.
+   * @default 'replace'
+   */
+  mode?: SearchPanelMode;
+  /** @default 'focused' */
+  scope?: CodeViewSearchScope;
+  /** Replaces the query. Omitted, an open panel keeps its query. */
+  query?: string;
+}
+interface CodeViewSearchOptions {
+  /**
+   * Stop binding cmd/ctrl+f and cmd/ctrl+alt+f inside the CodeView root, for
+   * apps that bind the shortcut elsewhere, e.g. on window. Escape and
+   * find-again keep working while a panel is open.
+   * @default false
+   */
+  disableShortcuts?: boolean;
+  /**
+   * How the viewport moves to a match that navigation has to bring into
+   * view. Reduced-motion preferences still force instant scrolling.
+   * @default 'instant'
+   */
+  scrollBehavior?: CodeViewScrollBehavior;
+  /**
+   * Matching options a fresh panel opens with, e.g. a user's persisted
+   * preferences. An open panel keeps whatever the user toggled.
+   */
+  defaults?: SearchOptionDefaults;
+}
+type CodeViewEditor<LAnnotation, Caret> = Editor<'file', LAnnotation, Caret> | Editor<'file-diff', LAnnotation, Caret>;
+interface ItemAnchor {
+  type: 'item';
+  id: string;
+  viewportOffset: number;
+}
+interface LineAnchor {
+  type: 'line';
+  id: string;
+  lineNumber: number;
+  side: SelectionSide | undefined;
+  viewportOffset: number;
+}
+type ScrollAnchor = ItemAnchor | LineAnchor;
+interface LineScrollPosition {
+  top: number;
+  height: number;
+}
+interface AdvancedVirtualizedBaseItem {
+  /** Current index of this record in the ordered items array. */
+  index: number;
+  /** Absolute top offset of this item inside the scroll content. */
+  top: number;
+  /** Total measured height reserved for this item. */
+  height: number;
+  /** Root <diffs-container> node currently mounted for this item, only exists
+   * when rendered. */
+  element: HTMLElement | undefined;
+  /** Last controlled version observed for this record. */
+  version: number | undefined;
+  /** Last CodeView option revision this item rendered with. */
+  renderedOptionsRevision: number;
+}
+interface CodeViewVirtualizedInstanceKey {
+  readonly __id: string;
+  readonly renderType: 'virtualized';
+}
+interface CodeViewDiffItemContext<LAnnotation, Caret> extends AdvancedVirtualizedBaseItem {
+  type: 'diff';
+  /** Latest item snapshot for this record. Controlled updates can replace it. */
+  item: CodeViewDiffItem<LAnnotation>;
+  /** Virtualized diff instance responsible for rendering this item. */
+  instance: VirtualizedFileDiff<LAnnotation, Caret>;
+}
+interface CodeViewFileItemContext<LAnnotation, Caret> extends AdvancedVirtualizedBaseItem {
+  type: 'file';
+  /** Latest item snapshot for this record. Controlled updates can replace it. */
+  item: CodeViewFileItem<LAnnotation>;
+  /** Virtualized file instance responsible for rendering this item. */
+  instance: VirtualizedFile<LAnnotation, Caret>;
+}
+type CodeViewContextItem<LAnnotation, Caret> = CodeViewDiffItemContext<LAnnotation, Caret> | CodeViewFileItemContext<LAnnotation, Caret>;
+interface CodeViewRenderedDiffItem<LAnnotation, Caret> {
+  id: string;
+  type: 'diff';
+  item: CodeViewDiffItem<LAnnotation>;
+  version: number | undefined;
+  element: HTMLElement;
+  instance: VirtualizedFileDiff<LAnnotation, Caret>;
+}
+interface CodeViewRenderedFileItem<LAnnotation, Caret> {
+  id: string;
+  type: 'file';
+  item: CodeViewFileItem<LAnnotation>;
+  version: number | undefined;
+  element: HTMLElement;
+  instance: VirtualizedFile<LAnnotation, Caret>;
+}
+type CodeViewRenderedItem<LAnnotation, Caret> = CodeViewRenderedDiffItem<LAnnotation, Caret> | CodeViewRenderedFileItem<LAnnotation, Caret>;
+interface CodeViewSlotSnapshot<LAnnotation, Caret> {
+  items: CodeViewRenderedItem<LAnnotation, Caret>[] | undefined;
+  header: HTMLElement | undefined;
+  footer: HTMLElement | undefined;
+}
+interface CodeViewLineSelection {
+  id: string;
+  range: SelectedLineRange;
+}
+interface CodeViewCoordinator<LAnnotation, Caret> {
+  hasHeaderRenderers: boolean;
+  hasAnnotationRenderer: boolean;
+  hasGutterRenderer: boolean;
+  onSnapshotChange(snapshot: CodeViewSlotSnapshot<LAnnotation, Caret> | undefined): void;
+}
+type CodeViewScrollListener<LAnnotation, Caret> = (scrollTop: number, viewer: CodeView<LAnnotation, Caret>) => void;
+type OverloadCallbackArgs<TCallback> = TCallback extends ((...args: infer TArgs) => unknown) ? TArgs : never;
+type CallbackReturn<TCallback> = TCallback extends ((...args: never[]) => infer TReturn) ? TReturn : never;
+type OverloadFileCallbackArgs<LAnnotation, Caret, TKey extends keyof FileOptions<LAnnotation, Caret>> = OverloadCallbackArgs<NonNullable<FileOptions<LAnnotation, Caret>[TKey]>>;
+type OverloadDiffCallbackArgs<LAnnotation, Caret, TKey extends keyof FileDiffOptions<LAnnotation, Caret>> = OverloadCallbackArgs<NonNullable<FileDiffOptions<LAnnotation, Caret>[TKey]>>;
+type CodeViewOptionCallback<LAnnotation, Caret, TKey extends keyof FileOptions<LAnnotation, Caret> & keyof FileDiffOptions<LAnnotation, Caret>> = {
+  (...args: [...OverloadFileCallbackArgs<LAnnotation, Caret, TKey>, context: CodeViewFileItemContext<LAnnotation, Caret>]): CallbackReturn<NonNullable<FileOptions<LAnnotation, Caret>[TKey]>>;
+  (...args: [...OverloadDiffCallbackArgs<LAnnotation, Caret, TKey>, context: CodeViewDiffItemContext<LAnnotation, Caret>]): CallbackReturn<NonNullable<FileDiffOptions<LAnnotation, Caret>[TKey]>>;
+};
+declare const CODE_VIEW_DIFF_OPTION_KEYS: readonly ['theme', 'disableLineNumbers', 'overflow', 'themeType', 'disableFileHeader', 'disableVirtualizationBuffers', 'preferredHighlighter', 'deferHydrationHighlight', 'useCSSClasses', 'useTokenTransformer', 'tokenizeMaxLineLength', 'tokenizeMaxLength', 'unsafeCSS', 'diffStyle', 'diffIndicators', 'disableBackground', 'expandUnchanged', 'loadDiffFiles', 'parseDiffOptions', 'collapsedContextThreshold', 'lineDiffType', 'maxLineDiffLength', 'expansionLineCount', 'lineHoverHighlight', 'enableTokenInteractionsOnWhitespace', 'enableGutterUtility', '__debugPointerEvents', 'enableLineSelection', 'controlledSelection', 'disableErrorHandling'];
+type CodeViewDiffOptionKeys = (typeof CODE_VIEW_DIFF_OPTION_KEYS)[number];
+declare const CODE_VIEW_FILE_OPTION_KEYS: readonly ['theme', 'disableLineNumbers', 'overflow', 'themeType', 'disableFileHeader', 'disableVirtualizationBuffers', 'preferredHighlighter', 'deferHydrationHighlight', 'useCSSClasses', 'useTokenTransformer', 'tokenizeMaxLineLength', 'tokenizeMaxLength', 'unsafeCSS', 'lineHoverHighlight', 'enableTokenInteractionsOnWhitespace', 'enableGutterUtility', '__debugPointerEvents', 'enableLineSelection', 'controlledSelection', 'disableErrorHandling'];
+type CodeViewPassThroughOptions<LAnnotation, Caret> = Pick<FileDiffOptions<LAnnotation, Caret>, CodeViewDiffOptionKeys>;
+type CodeViewMode = 'file' | 'diff';
+interface CodeViewItemEditCompleteEventMap<LAnnotation, Caret> {
+  file: FileEditCompleteEvent<LAnnotation, Caret>;
+  diff: FileDiffEditCompleteEvent<LAnnotation, Caret>;
+}
+interface CodeViewModeItemMap<LAnnotation> {
+  file: CodeViewFileItem<LAnnotation>;
+  diff: CodeViewDiffItem<LAnnotation>;
+}
+type CodeViewItemEditCompleteHandler<LAnnotation, Caret> = <TMode extends CodeViewMode>(event: CodeViewItemEditCompleteEventMap<LAnnotation, Caret>[TMode], item: CodeViewModeItemMap<LAnnotation>[TMode], nextItem: CodeViewModeItemMap<LAnnotation>[TMode]) => EditCompletionDecision;
+declare const CODE_VIEW_SHARED_CALLBACK_KEYS: readonly ['renderCustomHeader', 'renderHeaderPrefix', 'renderHeaderFilenameSuffix', 'renderHeaderMetadata', 'renderAnnotation', 'renderGutterUtility', 'onPostRender', 'onGutterUtilityClick', 'onLineClick', 'onLineNumberClick', 'onLineEnter', 'onLineLeave', 'onTokenClick', 'onTokenEnter', 'onTokenLeave'];
+declare const CODE_VIEW_SELECTION_CALLBACK_KEYS: readonly ['onLineSelected', 'onLineSelectionStart', 'onLineSelectionChange', 'onLineSelectionEnd'];
+type CodeViewSharedCallbackKeys = (typeof CODE_VIEW_SHARED_CALLBACK_KEYS)[number];
+type CodeViewSelectionCallbackKeys = (typeof CODE_VIEW_SELECTION_CALLBACK_KEYS)[number];
+type CodeViewItemCallbackCache = Partial<Record<CodeViewSharedCallbackKeys | CodeViewSelectionCallbackKeys, unknown>>;
+interface CodeViewItemOptionsState<LAnnotation> {
+  id: string;
+  callbackCache?: CodeViewItemCallbackCache;
+  removedItem?: CodeViewItem<LAnnotation>;
+}
+type CodeViewSharedCallbackOptions<LAnnotation, Caret> = { [TKey in CodeViewSharedCallbackKeys]?: CodeViewOptionCallback<LAnnotation, Caret, TKey>; };
+type CodeViewSelectionCallbackOptions<LAnnotation, Caret> = { [TKey in CodeViewSelectionCallbackKeys]?: CodeViewOptionCallback<LAnnotation, Caret, TKey>; };
+interface CodeViewOptions<LAnnotation, Caret> extends CodeViewPassThroughOptions<LAnnotation, Caret>, CodeViewSharedCallbackOptions<LAnnotation, Caret>, CodeViewSelectionCallbackOptions<LAnnotation, Caret> {
+  hunkSeparators?: Exclude<HunkSeparators, 'custom'>;
+  itemMetrics?: Partial<VirtualFileMetrics>;
+  pointerEventsOnScroll?: boolean;
+  smoothScrollSettings?: SmoothScrollSettings;
+  stickyHeaders?: boolean;
+  controlledSelection?: boolean;
+  onSelectedLinesChange?(selection: CodeViewLineSelection | null): void;
+  layout?: CodeViewLayout;
+  /** Find/replace behavior for the CodeView-owned search panel. */
+  searchOptions?: CodeViewSearchOptions;
+  /**
+   * Called with the search state when the panel opens and after every change,
+   * and with undefined when it closes. While `searching` is true the search is
+   * still running and the match count can still grow.
+   */
+  onSearchStateChange?(state: SearchPanelState | undefined): void;
+  /**
+   * Return an in-memory retention key for an item's editable draft and
+   * undo/redo history. Called only when CodeView creates the item's editor.
+   */
+  getEditStateKey?(item: CodeViewItem<LAnnotation>): string | undefined;
+  /**
+   * Create an editor for an item entering edit mode (`edit: true`). Providing
+   * this option is what enables item editing. Pass the given options into the
+   * editor constructor — `new Editor(editorType, options, editStateKey)` —
+   * so CodeView can track editor focus, route changes to `onItemEditChange`,
+   * and retain history when requested. Forward all supplied callbacks, including
+   * `onFocus`, `onBlur`, and `onRender`, to keep search scope and highlights
+   * synchronized with the editor.
+   * CodeView owns the returned editor's lifecycle: it
+   * associates with the edited item, suspends and resumes rendering across
+   * virtualization unmounts and collapse, and tears the editor down when the
+   * session ends (edit off or removal).
+   */
+  createEditor?<EType extends EditorType>(editorType: EType, options: CodeViewCreateEditorOptions<EType, LAnnotation, Caret>, editStateKey?: string): Editor<EType, LAnnotation, Caret>;
+  /**
+   * Called with the editor's `EditorChangeEvent` and the owning item whenever
+   * the edited document changes, from internal (edit) changes or external
+   * (CodeViewItem) changes. The event contains that same attached editor.
+   *
+   * Do not feed these changes back into item state.
+   */
+  onItemEditChange?(event: EditorChangeEvent<EditorType, LAnnotation, Caret>, item: CodeViewItem<LAnnotation>): void;
+  /**
+   * Called once when an edit session ends: edit to false, the item is removed
+   * from items, or the viewer tears down (`reset()`/`cleanUp()`, where the
+   * result is not installed because the viewer is going away). Collapse does
+   * not call it because the session remains active until the item expands.
+   *
+   * The event carries the completed `file`/`fileDiff` built from the edit
+   * session. `item` is the item that owned the session, and `nextItem` is
+   * the accepted replacement CodeView built from it: the event's completed
+   * value and annotations, `edit: false`, and a bumped `version`. Return
+   * `'accept'` to install the edit — CodeView applies `nextItem` through the
+   * item update path when the item still exists, and a controlled owner puts
+   * the same `nextItem` into its state — or `'reject'` to revert. The event is
+   * frozen; re-key the accepted value in place (`event.fileDiff.cacheKey =
+   * '…'`) before accepting. The event contains the detached editor with its
+   * final pre-detach state.
+   */
+  onItemEditComplete?: CodeViewItemEditCompleteHandler<LAnnotation, Caret>;
+  /**
+   * Called after CodeView itself changes an item's `collapsed` state, as find
+   * does when it lands on a match inside a collapsed item. `item` is the item
+   * before the change and `nextItem` is the one CodeView has already applied:
+   * the new `collapsed` and a bumped `version`. An owner that keeps its own
+   * items records the change, or its next list collapses the item again.
+   *
+   * Not called for changes the owner makes through `updateItem` or `setItems`.
+   */
+  onItemCollapsedChange?(item: CodeViewItem<LAnnotation>, nextItem: CodeViewItem<LAnnotation>): void;
+  /** Render a non-virtualized element at the very start of the scroll content,
+   * before the first item. It is always rendered and scrolls with the content.
+   * Return the same element across calls and mutate it in place to update;
+   * height changes are measured automatically. */
+  renderCodeViewHeader?(): HTMLElement | undefined;
+  /** Render a non-virtualized element at the very end of the scroll content,
+   * after the last item. Always rendered; height changes are measured
+   * automatically. */
+  renderCodeViewFooter?(): HTMLElement | undefined;
+  /** Internal dev-only check to ensure your `itemMetrics` are correct.  Its
+   * automatically disabled in a production build because it will hurt
+   * performance fairly significantly */
+  __devOnlyValidateItemHeights?: boolean;
+}
+type PendingAlignTypes = Exclude<CodeViewLineScrollTarget['align'], 'nearest'>;
+interface PendingLineTarget extends Omit<CodeViewLineScrollTarget, 'align'> {
+  align?: PendingAlignTypes;
+  searchMatch?: true;
+}
+interface PendingRangeTarget extends Omit<CodeViewRangeScrollTarget, 'align'> {
+  align?: PendingAlignTypes;
+}
+interface PendingItemTarget extends Omit<CodeViewItemScrollTarget, 'align'> {
+  align?: PendingAlignTypes;
+}
+type PendingScrollTarget = CodeViewPositionScrollTarget | PendingLineTarget | PendingRangeTarget | PendingItemTarget;
+type CodeViewItemMap<LAnnotation, Caret> = Map<string, CodeViewContextItem<LAnnotation, Caret>>;
+declare class CodeView<LAnnotation = undefined, Caret = undefined> {
+  static __STOP: boolean;
+  static __lastScrollPosition: number;
+  type: 'advanced';
+  readonly config: VirtualizerConfig;
+  /** @internal Public for internal classes to utilize. */
+  items: CodeViewContextItem<LAnnotation, Caret>[];
+  /** @internal Public for internal classes to utilize. */
+  idToItem: CodeViewItemMap<LAnnotation, Caret>;
+  /** @internal Public for internal classes to utilize. */
+  focusedEditor: CodeViewItemOptionsState<LAnnotation> | undefined;
+  private selectedLines;
+  private itemEditors;
+  private attachedEditors;
+  private instanceToItem;
+  private layoutDirtyIndex;
+  private pendingLayoutReset;
+  private renderOptionsRevision;
+  private slotCoordinator;
+  private slotSnapshot;
+  private scrollListeners;
+  private scrollHeight;
+  private containerHeight;
+  private scrollTop;
+  /** @internal Public for internal classes to utilize. */
+  scrollPageOffset: number;
+  private readonly scrollRebaseConfig;
+  private scrollDirty;
+  private scrollInteractionFixTimer;
+  private pointerEventsDisabled;
+  private codeOverflowFix;
+  private height;
+  private heightDirty;
+  private rootHasBox;
+  private windowSpecs;
+  /** @internal Public for internal classes to utilize. */
+  renderState: {
+    scrollTop: number;
+    firstIndex: number;
+    lastIndex: number;
+    stickyHeight: number;
+    stickyTop: number;
+    stickyBottom: number;
+    measurementsPending: boolean;
+  };
+  private itemMetricsCache;
+  private readonly fileOptionsPrototype;
+  private readonly diffOptionsPrototype;
+  /** @internal Public for CodeViewSearchManager, to see a scroll to a match. */
+  pendingScrollTarget: PendingScrollTarget | undefined;
+  private pendingScrollDone;
+  private pendingLayoutAnchor;
+  /** @internal Public for CodeViewSearchManager, to skip focus it parked. */
+  shouldFixContainerFocus: boolean;
+  private focusedItemId;
+  private scrollAnimation;
+  private root;
+  private resizeObserver;
+  private readonly search;
+  /** @internal Public for CodeViewSearchManager, to mount the find panel. */
+  container: HTMLDivElement | undefined;
+  private stickyContainer;
+  private stickyOffset;
+  private header;
+  private footer;
+  private elementPool;
+  private elementPoolVersion;
+  private elementPoolTracker;
+  private pendingElementPool;
+  options: CodeViewOptions<LAnnotation, Caret>;
+  private workerManager;
+  private isReadySubscription;
+  private pendingHighlighterTheme;
+  readonly isComponentManaged: boolean;
+  private slotSnapshotStale;
+  constructor(options?: CodeViewOptions<LAnnotation, Caret>, workerManager?: WorkerPoolManager | undefined, isComponentManaged?: boolean);
+  private getLayout;
+  getItemTopOffset(): number;
+  private computeMetricsCache;
+  private getSmoothScrollSettings;
+  private shouldDisablePointerEvents;
+  private validateRenderedItemHeight;
+  private validateStickyContainerHeight;
+  private clearScrollInteractionTimer;
+  private suspendScrollInteractions;
+  private restoreScrollInteractions;
+  private syncLayout;
+  private reconcileHeaderFooterHosts;
+  private reconcileHost;
+  private setHostHeight;
+  private measureMountedHosts;
+  setup(root: HTMLElement): void;
+  reset(): void;
+  cleanUp(): void;
+  private cleanAllRenderedItems;
+  private primeScrollTarget;
+  private getElementPoolLimit;
+  private acquireElement;
+  private releaseRenderedItem;
+  private renderedItemOwnsFocus;
+  private fixContainerFocus;
+  private handleFocusIn;
+  private handleFocusOut;
+  private renderedItemInPath;
+  private returnParkedFocus;
+  private rootHasFocus;
+  private cleanElement;
+  private queueElementForPool;
+  private promotePendingPooledElements;
+  private isElementClean;
+  private getElementPoolSize;
+  private clearElementPool;
+  private invalidateElementPool;
+  private markElementPoolGenerationCurrent;
+  private isElementPoolGenerationCurrent;
+  private resolveEffectiveScrollBehavior;
+  scrollTo(target: CodeViewScrollTarget): void;
+  /** @internal Public for internal classes to utilize */
+  requestScroll(target: CodeViewScrollTarget, onDone?: (result: ScrollRequestResult) => void): void;
+  private installScrollRequest;
+  setSelectedLines(selection: CodeViewLineSelection | null, options?: SelectionWriteOptions): void;
+  getSelectedLines(): CodeViewLineSelection | null;
+  clearSelectedLines(options?: SelectionWriteOptions): void;
+  /**
+   * Opens the find/replace panel, or refocuses an open one, the way the find
+   * shortcut does. Apps binding the shortcut themselves (see
+   * `searchOptions.disableShortcuts`) call this from their own handler.
+   */
+  openSearch(options?: CodeViewOpenSearchOptions): void;
+  /** Closes the find/replace panel and clears its match highlights. */
+  closeSearch(): void;
+  /** @internal Public for internal classes to utilize. */
+  restoreFocus(scopedItemId: string | undefined): void;
+  isSearchOpen(): boolean;
+  /** Steps the open panel to the next or previous match, like find-again. */
+  navigateSearch(direction: 'next' | 'previous'): void;
+  getItem(itemId: string): CodeViewItem<LAnnotation> | undefined;
+  /**
+   * Returns the editor while this item is being edited. Partial diffs get an
+   * editor after their files load; scrolling away or collapsing keeps it.
+   */
+  getEditor(itemId: string): CodeViewEditor<LAnnotation, Caret> | undefined;
+  updateItem(input: CodeViewItem<LAnnotation>): boolean;
+  updateItemId(oldId: string, newId: string): boolean;
+  addItem(input: CodeViewItem<LAnnotation>): void;
+  addItems(inputs: readonly CodeViewItem<LAnnotation>[]): void;
+  removeItem(itemId: string): boolean;
+  setItems(items: readonly CodeViewItem<LAnnotation>[]): void;
+  private replaceItems;
+  /**
+   * Append new records to the viewer while preserving existing layout state.
+   * This is the shared path for imperative adds and the append-only reconcile
+   * fast path, so it measures new items immediately and only triggers render
+   * once at the end.
+   */
+  private appendItemsInternal;
+  private canSkipRenderForAppend;
+  onThemeChange(): void;
+  setOptions(options: CodeViewOptions<LAnnotation, Caret> | undefined): void;
+  capturePendingLayoutAnchor(nextItems?: Readonly<CodeViewItemMap<LAnnotation, Caret>>): void;
+  render(immediate?: boolean): void;
+  private clearReadySubscription;
+  /** @internal The worker pool's theme takes precedence over the view option. */
+  getTheme(): DiffsThemeNames | ThemesType;
+  private isSharedHighlighterReady;
+  private renderOnLocalTheme;
+  /** @internal */
+  onHighlightError(error: unknown): void;
+  instanceChanged(instance: CodeViewVirtualizedInstanceKey, layoutDirty: boolean): void;
+  getWindowSpecs(): VirtualWindowSpecs;
+  getContainerElement(): HTMLElement | undefined;
+  getHeaderElement(): HTMLElement | undefined;
+  getFooterElement(): HTMLElement | undefined;
+  getRenderedItems(): CodeViewRenderedItem<LAnnotation, Caret>[];
+  setSlotCoordinator(coordinator?: CodeViewCoordinator<LAnnotation, Caret>): boolean;
+  getSlotSnapshot(coordinator: CodeViewCoordinator<LAnnotation, Caret>): CodeViewSlotSnapshot<LAnnotation, Caret> | undefined;
+  private buildSlotSnapshot;
+  subscribeToScroll(listener: CodeViewScrollListener<LAnnotation, Caret>): () => void;
+  getLocalTopForInstance(instance: CodeViewVirtualizedInstanceKey): number;
+  scrollToInstanceLine(instance: CodeViewVirtualizedInstanceKey, lineNumber: number, align: ScrollLogicalPosition, onDone: (result: ScrollRequestResult) => void): void;
+  getTopForItem(id: string): number | undefined;
+  private createItem;
+  private applySelectedLines;
+  private syncSelection;
+  /** @internal Public for internal classes to utilize. */
+  isItemInEditMode(item: CodeViewContextItem<LAnnotation, Caret>): boolean;
+  /**
+   * Lazily create and attach the editor for a mounted edit-mode item. Called
+   * from the render loop so every mounted item passes through it: fresh
+   * mounts, remounts after virtualization released the item, and items whose
+   * edit flag was just turned on. Editors persist across unmounts, so a
+   * remounted item resumes its existing editor and retained document; the
+   * instance retains its private session model so the remount
+   * paints the edited text without changing the host input.
+   */
+  private attachItemEditor;
+  /**
+   * Reconcile the editors CodeView is holding: complete sessions for items
+   * whose edit turned off or that were removed, and suspend sessions for
+   * collapsed items (the editor tears down, the record and the instance's
+   * session stay for the next expand). Attachment happens in the render loop
+   * via attachItemEditor.
+   */
+  private syncItemEditors;
+  private requireItemFromState;
+  /**
+   * Item-instance `onEditComplete` adapter for file items: builds the
+   * accepted next item, hands it to `onItemEditComplete` alongside the event
+   * and the owning item, and translates the identity of the returned item to
+   * the component return contract.
+   */
+  private completeFileItemEdit;
+  /**
+   * Item-instance `onEditComplete` adapter for diff items; see
+   * completeFileItemEdit.
+   */
+  private completeDiffItemEdit;
+  private renamePendingScrollTarget;
+  private renamePendingLayoutAnchor;
+  private createFileOptionsPrototype;
+  private createDiffOptionsPrototype;
+  private createFileOptions;
+  private createDiffOptions;
+  private updateItemOptionsId;
+  private getItemOptions;
+  private defineItemSharedCallback;
+  private defineItemSelectionCallback;
+  /**
+   * Track the earliest index whose measured layout may now be stale. Later
+   * render passes relayout from this point forward so we do not have to rebuild
+   * positions for the whole list after every change.
+   */
+  private markLayoutDirtyFromIndex;
+  /**
+   * Mark the earliest affected item as layout-dirty after an imperative change.
+   * Each record carries its current array index so this stays O(1) even when
+   * the viewer holds a very large number of items.
+   */
+  private markItemLayoutDirty;
+  /**
+   * Detect the common controlled-update case where the new list simply extends
+   * the existing ordered prefix. When that happens we can reuse every current
+   * record in place, sync any versioned payload changes, and append only the new
+   * tail instead of rebuilding the whole list.
+   */
+  private tryAppendItems;
+  /**
+   * Reconcile a new controlled item list against the existing records by id.
+   * This reuses records and instances when type matches, cleans up removed
+   * records, rebuilds the lookup maps, and marks layout dirty whenever order,
+   * membership, or versioned item data changes.
+   */
+  private reconcileItems;
+  /**
+   * Update a reused record from the latest controlled item only when its item
+   * version changes. Matching versions mean CodeView keeps the current record
+   * snapshot, which lets imperative updates remain in place until the caller
+   * intentionally publishes a newer version.
+   */
+  private syncItemRecord;
+  private getMaxScrollTopForHeight;
+  private getMaxScrollTop;
+  private shouldRebaseScroll;
+  private getPagedScrollHeight;
+  private getMaxPagedScrollTop;
+  private clampPagedScrollTop;
+  /**
+   * Clamps a logical scroll position to the min/max allowable scroll range
+   * based on the full computed content height.
+   */
+  private clampScrollTop;
+  private getMaxScrollPageOffset;
+  private clampScrollPageOffset;
+  private resolveScrollPageWindow;
+  /**
+   * Resolve how a logical scrollTop maps onto the reusable paged scroll window
+   * without mutating the current page offset.
+   */
+  private resolvePagedScrollPosition;
+  private needsScrollPageUpdate;
+  private getPagedLayoutTop;
+  /** @internal Public for internal classes to utilize. */
+  getStickyHeaderOffset(): number;
+  /** @internal Public for internal classes to utilize. */
+  getScrollTargetRect(target: CodeViewItemScrollTarget | CodeViewLineScrollTarget | CodeViewRangeScrollTarget): {
+    top: number;
+    height: number;
+  } | undefined;
+  private normalizeScrollTarget;
+  /**
+   * Resolve a target's scroll position
+   * Returns `undefined` when we can't resolve a target for whatever reason
+   */
+  private resolveScrollTargetTop;
+  /**
+   * Given an existing scroll target (scroll top and height), figure out the
+   * correct scroll position to target based on the desired alignment, offset
+   * and stickyOffset if necessary
+   */
+  private resolveAlignedScrollPosition;
+  private getLineScrollPosition;
+  private getRangeScrollPosition;
+  /**
+   * Determine target scroll position for current frame.
+   *
+   * If there's no pendingScrollTarget then we just return the current scroll
+   * position
+   *
+   * If there's a pendingScrollTarget then we depend on whether there's a
+   * smooth scroll animation or not. If not just return the destination, or
+   * compute next position given the smooth scroll spring physics
+   */
+  private computeTargetScrollTopForFrame;
+  /**
+   * Closed-form critical-damped ODE step.
+   *
+   * Stable at any dt (Euler would blow up once ω·dt ≳ 1), so this survives
+   * big RAF gaps (tab-wake, offscreen frames) and resize-driven ticks that
+   * fire outside the normal RAF cadence.
+   */
+  private computeSpringStep;
+  /**
+   * For any given pendingScrollTarget, updates any in flight smooth scroll
+   * animations and returns the target scrollTop to move towards
+   *
+   * Resolves the animation based on frame time and adopts any necessary scroll
+   * anchoring corrections if necessary
+   */
+  private advanceScrollAnimation;
+  private computeRenderRangeAndEmit;
+  private flushManagers;
+  private syncContainerHeight;
+  private getStickyBounds;
+  private applyStickyPositioning;
+  private syncPagedScrollScaffolding;
+  private reconcileRenderedItems;
+  private updateStickyPositioning;
+  private handleScroll;
+  /** @internal Public for internal classes to utilize. */
+  clearPendingScroll: (event?: Event) => void;
+  cancelScroll(onDone?: (result: ScrollRequestResult) => void): void;
+  private finishPendingScroll;
+  private hasLayout;
+  private setRootHasBox;
+  private handleResize;
+  /**
+   * Figure out scrollTop accounting for sticky header if enabled and
+   * necessary
+   */
+  private getScrollAnchorViewportTop;
+  /**
+   * Attempt to find a scroll anchor based on build in metrics of the existing
+   * rendered files/diff.
+   *
+   * A scroll anchor represents the first fully visible element (in other
+   * words, the first file or first line who's top is fully in the viewport).
+   */
+  /** @internal Public for internal classes to utilize. */
+  getScrollAnchor(scrollTop: number, availableItems?: ReadonlyMap<string, CodeViewContextItem<LAnnotation, Caret>>): ScrollAnchor | undefined;
+  /**
+   * Given a scroll anchor, attempt to resolve a newly updated (and clamped)
+   * scroll position to keep the anchored element in place.
+   *
+   * If we can't resolve a position for whatever reason, we'll return
+   * undefined.
+   */
+  private resolveAnchoredScrollTop;
+  /**
+   * An external API so CodeView can be given an existing scroll anchor from an
+   * external source
+   */
+  scrollToAnchor(anchor: ScrollAnchor, behavior?: CodeViewScrollBehavior): void;
+  /**
+   * Whether the anchor's item or line is still where it was when the anchor
+   * was taken.
+   */
+  isAtScrollAnchor(anchor: ScrollAnchor): boolean;
+  /**
+   * Apply a device-pixel-rounded scroll position if it differs from the last
+   * logical scrollTop synchronized into the paged scroll scaffold.
+   */
+  private applyScrollFix;
+  /**
+   * Decide whether a pending programmatic scroll has reached its
+   * destination and should be cleared.
+   */
+  private isPendingTargetSettled;
+  getScrollTop(): number;
+  getHeight(): number;
+  getScrollHeight(): number;
+  private flushSlotCoordinator;
+  private notifyScroll;
+  /**
+   * Find the first item whose bottom edge crosses into the viewport window.
+   * This lets scroll-time rendering jump directly near the visible range instead
+   * of linearly scanning from the start of very large item lists.
+   */
+  private findFirstVisibleIndex;
+  /**
+   * Find the last item whose top edge is still within the viewport window.
+   * Paired with findFirstVisibleIndex, this bounds the render loop to only the
+   * slice of items that can actually intersect the current scroll range.
+   */
+  private findLastVisibleIndex;
+  /**
+   * Recompute measured tops and heights starting from the earliest dirty item.
+   * Earlier items keep their existing layout, while everything from startIndex
+   * onward is remeasured so downstream positions and total scroll height stay
+   * consistent after inserts, removals, or versioned item updates.
+   */
+  private recomputeLayout;
+  private resetRenderState;
+  private getFitPerfectlyOverscroll;
+}
+//#endregion
+export { CODE_VIEW_DIFF_OPTION_KEYS, CODE_VIEW_FILE_OPTION_KEYS, CodeView, CodeViewContextItem, CodeViewCoordinator, CodeViewCreateEditorOptions, CodeViewDiffItemContext, CodeViewItemEditCompleteEventMap, CodeViewItemEditCompleteHandler, CodeViewLineSelection, CodeViewMode, CodeViewModeItemMap, CodeViewOpenSearchOptions, CodeViewOptions, CodeViewRenderedDiffItem, CodeViewRenderedFileItem, CodeViewRenderedItem, CodeViewScrollListener, CodeViewSearchOptions, CodeViewSearchScope, CodeViewSlotSnapshot, LineAnchor, LineScrollPosition, PendingLineTarget, ScrollAnchor };
+//# sourceMappingURL=CodeView.d.ts.map
