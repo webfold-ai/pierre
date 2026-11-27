@@ -1,0 +1,1 @@
+{"version":3,"file":"core-workerd.js","names":[],"sources":["../lib/core-workerd.ts"],"sourcesContent":["import emitterModule from './emitter.wasm';\nimport { initEmitter } from './highlighter';\n\ninitEmitter(emitterModule);\n\nexport * from './core';\n"],"mappings":";;;;;AAGA,YAAY,aAAa"}

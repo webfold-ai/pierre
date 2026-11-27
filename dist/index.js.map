@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","names":[],"sources":["../lib/index.ts"],"sourcesContent":["import { initLazy, wasmBytes } from './highlighter';\nimport wasm from './highlights.wasm.mjs';\n\ninitLazy(() => new WebAssembly.Module(wasmBytes(wasm)));\n\nexport * from './core';\nexport * from '../themes/index';\n"],"mappings":";;;;;;AAGA,eAAe,IAAI,YAAY,OAAO,UAAU,IAAI,CAAC,CAAC"}
